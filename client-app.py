@@ -9,10 +9,12 @@ import logging
 # logger.setLevel(logging.DEBUG)
 # logger.addHandler(logging.StreamHandler())
 
-TOKEN = 'adtb6ow34ickt4o396y25a'
+TOKEN = 'lktya12k0yo20ua5bk405k'
 URI = "wss://ts.a-m0.ru/ws/"
-PROTOCOL_GUID = '8ab1aa20-03c3-11ef-8725-3b41761b2404' 
-ORDER_GUID = '4a593110-fe1d-11ee-a6a3-3f6006cc05cc'
+PROTOCOL_GUID = '2bfc39a0-080a-11ef-a7a0-bb86ff8a3b53'
+ORDER_GUID = '2c68e830-0467-11ef-9d32-47ff33ac6ce5'
+# PROTOCOL_GUID = '8ab1aa20-03c3-11ef-8725-3b41761b2404' 
+# ORDER_GUID = '4a593110-fe1d-11ee-a6a3-3f6006cc05cc'
 STATICTIC = True
 REQUESTS_CNT = 3
 
@@ -40,7 +42,8 @@ async def workplace_action():
         start_time = datetime.datetime.now()
 
         for i in range(REQUESTS_CNT):
-            code = "08051932421564"
+            #code = "08051932421564"
+            code = '08051932387389'
 
             json_print = {
                 "Operation": "PrintLabel",
