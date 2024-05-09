@@ -134,16 +134,16 @@ async def main():
     test_duration = round( (finish_test_time - start_test_time), 3)
     print(Style.RESET_ALL)
     report_color = Fore.LIGHTMAGENTA_EX
-    print(report_color + '***************         PROGRESS REPORT        ***************')
-    print(report_color + '[                 Total test time               ] =', test_duration, 'SECONDS')
+    print(report_color + '*****************         PROGRESS REPORT        *****************')
+    print(report_color + '[                 Total test time               ] =', test_duration, 'seconds')
     print(report_color + '[                   Workplaces                  ] =', CNT_INSTANCES)
     print(report_color + '[ Number of requests (one workplace per second) ] =', CNT_TASKS)
     print(report_color + '[            Number of requests (total)         ] =', CNT_INSTANCES * CNT_TASKS * CNT_CYCLES) 
     print(report_color + '[            Number of error responses          ] =', CNT_ERRORS)
     if DURATION_LIST:
-        print(report_color + '[               Response time (MIN)             ] =', min(DURATION_LIST), 'SECONDS')
-        print(report_color + '[               Response time (MAX)             ] =', max(DURATION_LIST), 'SECONDS')
-        print(report_color + '[               Response time (AVG)             ] =', round(sum(DURATION_LIST)/len(DURATION_LIST), 3), 'SECONDS')
+        print(report_color + '[               Response time (MIN)             ] =', min(DURATION_LIST), 'seconds')
+        print(report_color + '[               Response time (MAX)             ] =', max(DURATION_LIST), 'seconds')
+        print(report_color + '[               Response time (AVG)             ] =', round(sum(DURATION_LIST)/len(DURATION_LIST), 3), 'seconds')
         print(Fore.LIGHTCYAN_EX + '[               Response time list              ] =', DURATION_LIST)
     print(Style.RESET_ALL)
 
