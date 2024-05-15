@@ -12,10 +12,21 @@ else:
   print("error! config file doesn't exist"); sys.exit()
 
 
-def get_code_list():
+def get_codes():
     # gets list of code from outer source/file
-    code_list = ['4680648061203', ] # '4680648061200', ]
+    # code_list = ['4680648061203', ] # '4680648061200', ]
+    with open('code-list.txt', 'r') as f:
+        code_list = f.readlines()
+        code_list = [c for c in map(lambda x: x.replace('\n', ''), code_list)]
     return code_list
+
+def create_code_list(code_list, quantity):
+    # creates list of defined quantity of codes
+    created_list = list()
+    for i in range(quantity):
+        code = random.choice(code_list)
+        created_list.append(code)
+    return created_list
 
 
 # logger = logging.getLogger('websockets')
@@ -49,7 +60,10 @@ DURATION_LIST = list()
 PROCESS_TIME_LIST = list()
 QUEUE_TIME_LIST = list()
 
-CODE_LIST = get_code_list()
+CNT_TOTAL_REQUESTS = CNT_INSTANCES * CNT_TASKS * CNT_CYCLES
+CODE_LIST = get_codes()
+CODE_LIST = create_code_list(CODE_LIST, CNT_TOTAL_REQUESTS)
+print(CODE_LIST)
 
 
 async def display_instance_text(instance_id, instance_color, text_to_display):
@@ -91,7 +105,8 @@ async def create_request(ws, instance_id, instance_color, cnt_tsks):
 
         for i in range(cnt_tsks):
             # each iteration chooses random code from code_list
-            code = random.choice(CODE_LIST)
+            # code = random.choice(CODE_LIST)
+            code = CODE_LIST.pop()
             json_msg['Data']['Code'] = code
             msg = json.dumps(json_msg)
 
@@ -157,7 +172,7 @@ async def display_report(test_duration):
     print(report_color + '[ Total test time           ] =', test_duration)
     print(report_color + '[ Workplaces                ] =', CNT_INSTANCES)
     print(report_color + '[ Number of requests        ] =', CNT_TASKS, '(one workplace per second)')
-    print(report_color + '[ Number of requests        ] =', CNT_INSTANCES * CNT_TASKS * CNT_CYCLES, '(total)') 
+    print(report_color + '[ Number of requests        ] =', CNT_TOTAL_REQUESTS, '(total)') 
     print(report_color + '[ Number of error responses ] =', CNT_ERRORS)
 
     if DURATION_LIST:
