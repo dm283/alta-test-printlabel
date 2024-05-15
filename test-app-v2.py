@@ -14,7 +14,7 @@ else:
 
 def get_code_list():
     # gets list of code from outer source/file
-    code_list = ['4680648061203', '4680648061200', ]
+    code_list = ['4680648061203', ] # '4680648061200', ]
     return code_list
 
 
@@ -111,6 +111,12 @@ async def instance_action_v1():
     await display_instance_text(instance_id, instance_color, 'set connection...')
     async with websockets.connect(uri=URI, subprotocols=['chat',]) as ws:
         await display_instance_text(instance_id, instance_color, 'ok. connected')
+
+        # check latency of connection
+        pong_waiter = await ws.ping()
+        print('pong_waiter', pong_waiter)
+        latency = await pong_waiter  # only if you want to wait for the corresponding pong
+        print('latency', latency)
 
         # # 1 Authentication
         json_auth = { "Operation": "Auth", "Data": { "Token": TOKEN, } }
