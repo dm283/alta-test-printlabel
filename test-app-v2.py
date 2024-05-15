@@ -44,7 +44,11 @@ COLOR_SET = {
 CNT_INSTANCES_STARTED = int()
 CYCLE_START_TIME = {}
 CNT_ERRORS = int()
+LATENCY_LIST = list()
 DURATION_LIST = list()
+PROCESS_TIME_LIST = list()
+QUEUE_TIME_LIST = list()
+
 CODE_LIST = get_code_list()
 
 
@@ -70,6 +74,10 @@ async def receive_response(ws, instance_id, instance_color, cnt_tsks):
                     continue
             duration = round((response_time - CYCLE_START_TIME[instance_id][cycle]), 3) 
             DURATION_LIST.append(duration)
+
+            json_response = json.loads(response)
+            PROCESS_TIME_LIST.append(json_response['Data']['ProcessTime']/1000)
+            QUEUE_TIME_LIST.append(json_response['Data']['QueueTime']/1000)
         
 
 async def create_request(ws, instance_id, instance_color, cnt_tsks):
@@ -114,8 +122,8 @@ async def instance_action_v1():
 
         # check latency of connection
         pong_waiter = await ws.ping()
-        print('pong_waiter', pong_waiter)
         latency = await pong_waiter  # only if you want to wait for the corresponding pong
+        LATENCY_LIST.append(latency)
         print('latency', latency)
 
         # # 1 Authentication
@@ -143,18 +151,42 @@ async def display_report(test_duration):
     # creates and displays a report
     print(Style.RESET_ALL)
     report_color = Fore.LIGHTMAGENTA_EX
-    print(report_color + '*****************         PROGRESS REPORT        *****************')
-    print(report_color + '[                 Total test time               ] =', test_duration, 'seconds')
-    print(report_color + '[                   Workplaces                  ] =', CNT_INSTANCES)
-    print(report_color + '[ Number of requests (one workplace per second) ] =', CNT_TASKS)
-    print(report_color + '[            Number of requests (total)         ] =', CNT_INSTANCES * CNT_TASKS * CNT_CYCLES) 
-    print(report_color + '[            Number of error responses          ] =', CNT_ERRORS)
+    print(Fore.LIGHTGREEN_EX + '*****************         PROGRESS REPORT        *****************')
+    print(report_color + '[ Latency                   ] =', 
+          round(sum(LATENCY_LIST)/len(LATENCY_LIST), 3))
+    print(report_color + '[ Total test time           ] =', test_duration)
+    print(report_color + '[ Workplaces                ] =', CNT_INSTANCES)
+    print(report_color + '[ Number of requests        ] =', CNT_TASKS, '(one workplace per second)')
+    print(report_color + '[ Number of requests        ] =', CNT_INSTANCES * CNT_TASKS * CNT_CYCLES, '(total)') 
+    print(report_color + '[ Number of error responses ] =', CNT_ERRORS)
+
     if DURATION_LIST:
-        print(report_color + '[               Response time (MIN)             ] =', min(DURATION_LIST), 'seconds')
-        print(report_color + '[               Response time (MAX)             ] =', max(DURATION_LIST), 'seconds')
-        print(report_color + '[               Response time (AVG)             ] =', 
-              round(sum(DURATION_LIST)/len(DURATION_LIST), 3), 'seconds')
-    print(Fore.LIGHTCYAN_EX + '[               Response time list              ] =', DURATION_LIST)
+        print(); print(Fore.LIGHTGREEN_EX + 'Response time (including send/receive, process, queue time):')
+        print(report_color + '[ min     ] =', min(DURATION_LIST))
+        print(report_color + '[ max     ] =', max(DURATION_LIST))
+        print(report_color + '[ average ] =', 
+              round(sum(DURATION_LIST)/len(DURATION_LIST), 3))
+    print(Fore.LIGHTCYAN_EX + '[ values  ] =', DURATION_LIST)
+
+    if PROCESS_TIME_LIST:
+        print(); print(Fore.LIGHTGREEN_EX + 'Process time:')
+        print(report_color + '[ min     ] =', min(PROCESS_TIME_LIST))
+        print(report_color + '[ max     ] =', max(PROCESS_TIME_LIST))
+        print(report_color + '[ average ] =', 
+              round(sum(PROCESS_TIME_LIST)/len(PROCESS_TIME_LIST), 3))
+    print(Fore.LIGHTCYAN_EX + '[ values  ] =', PROCESS_TIME_LIST)
+
+    if QUEUE_TIME_LIST:
+        print(); print(Fore.LIGHTGREEN_EX + 'Queue time:')
+        print(report_color + '[ min     ] =', min(QUEUE_TIME_LIST))
+        print(report_color + '[ max     ] =', max(QUEUE_TIME_LIST))
+        print(report_color + '[ average ] =', 
+              round(sum(QUEUE_TIME_LIST)/len(QUEUE_TIME_LIST), 3))
+    print(Fore.LIGHTCYAN_EX + '[ values  ] =', QUEUE_TIME_LIST)
+    
+    print()
+    print(Fore.LIGHTYELLOW_EX +  '*  All time indicators - in seconds')
+
     print(Style.RESET_ALL)
 
 
