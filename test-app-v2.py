@@ -67,7 +67,8 @@ CODE_LIST = create_code_list(CODE_LIST, CNT_TOTAL_REQUESTS)
 
 async def display_instance_text(instance_id, instance_color, text_to_display):
     # display text of particular instance
-    print(instance_color + f'instance [#{instance_id}]:  ' + text_to_display)
+    # print(instance_color + f'instance [#{instance_id}]:  ' + text_to_display)
+    pass
 
 
 async def receive_response(ws, instance_id, instance_color, cnt_tsks):
@@ -84,7 +85,7 @@ async def receive_response(ws, instance_id, instance_color, cnt_tsks):
             response_time = time.monotonic()
             RESPONSE_TIME_LIST.append(response_time)
 
-            #text_msg = f'[ response ]:  from {CYCLE_START_TIME[instance_id][cycle]} to {response_time}  --  {response}'
+            # text_msg = f'[ response ]:  {response_time}  --  {response}'
             text_msg = f'[ response ]:  {response_time}'
             await display_instance_text(instance_id, instance_color, text_msg)
 
@@ -105,7 +106,8 @@ async def create_request(ws, instance_id, instance_color, cnt_tsks):
             await ws.send(msg)
             request_time = time.monotonic()
             REQUEST_TIME_LIST.append(request_time)
-            text_msg = f'[ request ]:  {request_time}' #  {msg}'
+            text_msg = f'[ request ]:  {request_time}'
+            # text_msg = f'[ request ]:  {request_time}  --  {msg}'
             await display_instance_text(instance_id, instance_color, text_msg)
             await asyncio.sleep(REQUEST_TIME_GAP)  #  
         text_msg = f'turn {cycle+1} tasks created'#  {turn_time}'
@@ -163,6 +165,7 @@ async def display_stats(report_color, indicator_list):
 async def display_report(test_duration):
     # creates and displays a report
     report_color = Fore.LIGHTCYAN_EX
+    error_color = Fore.LIGHTRED_EX if CNT_ERRORS else report_color
     list_title_color = Fore.LIGHTBLACK_EX
     list_values_color = Fore.WHITE
     DURATION_LIST = [ round(RESPONSE_TIME_LIST[i] - REQUEST_TIME_LIST[i], 3)  for i in range( len(REQUEST_TIME_LIST) ) ]
@@ -171,13 +174,13 @@ async def display_report(test_duration):
     print(Style.RESET_ALL)
     print(Fore.LIGHTGREEN_EX + '*****************         PROGRESS REPORT        *****************')
     print(Fore.LIGHTYELLOW_EX +  '*  All time indicators - in seconds'); print()
-    print(report_color + '[ latency/ping time                ] =', round(statistics.mean(LATENCY_LIST), 3))
-    print(report_color + '[ total test time                  ] =', test_duration)
-    print(report_color + '[ request-response total test time ] =', request_response_total_test_time)
-    print(report_color + '[ workplaces                       ] =', CNT_INSTANCES)
-    print(report_color + '[ number of requests               ] =', CNT_INSTANCE_TASKS_PER_SEC, '(one workplace per second)')
-    print(report_color + '[ number of requests               ] =', CNT_TOTAL_REQUESTS, '(total)') 
-    print(report_color + '[ error responses                  ] =', CNT_ERRORS)
+    print(report_color + '[ latency/ping time            ] =', round(statistics.mean(LATENCY_LIST), 3))
+    print(report_color + '[ total test time              ] =', test_duration)
+    print(report_color + '[ requests-responses test time ] =', request_response_total_test_time)
+    print(report_color + '[ workplaces                   ] =', CNT_INSTANCES)
+    print(report_color + '[ number of requests           ] =', CNT_INSTANCE_TASKS_PER_SEC, '(one workplace per second)')
+    print(report_color + '[ number of requests           ] =', CNT_TOTAL_REQUESTS, '(total)') 
+    print(error_color + '[ error responses              ] =', CNT_ERRORS)
 
     print(); print(Fore.LIGHTGREEN_EX + 'Response time (including send/receive, process, queue time):')
     await display_stats(report_color, DURATION_LIST)
@@ -201,6 +204,7 @@ async def display_report(test_duration):
 
 async def main():
     # the main entry function - runs setted number of instances and its tasks
+    print(f'Test has started. {CNT_TOTAL_REQUESTS} requests will be made. Please wait.')
     start_test_time = time.monotonic()
     await asyncio.gather( *( instance_action_v1() for i in range(CNT_INSTANCES) ) )
     finish_test_time = time.monotonic()
