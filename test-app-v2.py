@@ -1,4 +1,4 @@
-import sys, asyncio, random, time, websockets, json, logging, os, configparser, statistics
+import sys, asyncio, random, time, websockets, json, logging, os, configparser, statistics, socket
 from colorama import just_fix_windows_console, Fore, Back, Style
 from pathlib import Path
 
@@ -90,8 +90,8 @@ async def receive_response(ws, instance_id, instance_color, cnt_tsks):
             await display_instance_text(instance_id, instance_color, text_msg)
 
             json_response = json.loads(response)
-            PROCESS_TIME_LIST.append(json_response['Data']['ProcessTime']/1000)
-            QUEUE_TIME_LIST.append(json_response['Data']['QueueTime']/1000)
+            PROCESS_TIME_LIST.append(json_response['Data']['ProcessTime'])
+            QUEUE_TIME_LIST.append(json_response['Data']['QueueTime'])
         
 
 async def create_request(ws, instance_id, instance_color, cnt_tsks):
@@ -123,42 +123,43 @@ async def instance_action_v1():
     
     await display_instance_text(instance_id, instance_color, 'instance is created')
     await display_instance_text(instance_id, instance_color, 'set connection...')
-    async with websockets.connect(uri=URI, subprotocols=['chat',]) as ws:
-        await display_instance_text(instance_id, instance_color, 'ok. connected')
+    try:
+        async with websockets.connect(uri=URI, subprotocols=['chat',]) as ws:
+            await display_instance_text(instance_id, instance_color, 'ok. connected')
 
-        # check latency of connection
-        pong_waiter = await ws.ping()
-        latency = await pong_waiter  # only if you want to wait for the corresponding pong
-        LATENCY_LIST.append(latency)
+            # check latency of connection
+            pong_waiter = await ws.ping()
+            latency = await pong_waiter  # only if you want to wait for the corresponding pong
+            LATENCY_LIST.append(latency)
 
-        # # 1 Authentication
-        json_auth = { "Operation": "Auth", "Data": { "Token": TOKEN, } }
-        msg = json.dumps(json_auth)
-        request = await ws.send(msg)
-        await display_instance_text(instance_id, instance_color, msg)
-        response = await ws.recv()
-        await display_instance_text(instance_id, instance_color, response)
-        if CHECK_AUTH and ('Пользователь не авторизован' in response):
-            print('ERROR:  the user is not authorised!')
-            sys.exit()
+            # # 1 Authentication
+            json_auth = { "Operation": "Auth", "Data": { "Token": TOKEN, } }
+            msg = json.dumps(json_auth)
+            request = await ws.send(msg)
+            await display_instance_text(instance_id, instance_color, msg)
+            response = await ws.recv()
+            await display_instance_text(instance_id, instance_color, response)
+            if CHECK_AUTH and ('Пользователь не авторизован' in response):
+                print('ERROR:  the user is not authorised!')
+                sys.exit()
 
-        # 2 Printlabel requests and responses
-        await asyncio.gather(
-            asyncio.create_task( create_request(ws, instance_id, instance_color, CNT_INSTANCE_TASKS_PER_SEC) ),
-            asyncio.create_task( receive_response(ws, instance_id, instance_color, CNT_INSTANCE_TASKS_PER_SEC) ),
-        )
-
-    await asyncio.sleep(0.5)
-    await display_instance_text(instance_id, instance_color, 'all tasks is completed')
+            # 2 Printlabel requests and responses
+            await asyncio.gather(
+                asyncio.create_task( create_request(ws, instance_id, instance_color, CNT_INSTANCE_TASKS_PER_SEC) ),
+                asyncio.create_task( receive_response(ws, instance_id, instance_color, CNT_INSTANCE_TASKS_PER_SEC) ),
+            )
+    except Exception as ex:
+        print('testing error: ', ex)
+        sys.exit()
     
 
 async def display_stats(report_color, indicator_list):
     # create and displays statistics in a report
     print(report_color + '[ min       ] =', min(indicator_list))
     print(report_color + '[ max       ] =', max(indicator_list))        
-    print(report_color + '[ mean      ] =', round(statistics.mean(indicator_list), 3))
-    print(report_color + '[ median    ] =', round(statistics.median(indicator_list), 3))
-    print(report_color + '[ mode      ] =', round(statistics.mode(indicator_list), 3))
+    print(report_color + '[ mean      ] =', round(statistics.mean(indicator_list)))
+    print(report_color + '[ median    ] =', round(statistics.median(indicator_list)))
+    print(report_color + '[ mode      ] =', round(statistics.mode(indicator_list)))
     print(report_color + '[ multimode ] =', statistics.multimode(indicator_list))
 
 
@@ -168,13 +169,13 @@ async def display_report(test_duration):
     error_color = Fore.LIGHTRED_EX if CNT_ERRORS else report_color
     list_title_color = Fore.LIGHTBLACK_EX
     list_values_color = Fore.WHITE
-    DURATION_LIST = [ round(RESPONSE_TIME_LIST[i] - REQUEST_TIME_LIST[i], 3)  for i in range( len(REQUEST_TIME_LIST) ) ]
-    request_response_total_test_time = round(RESPONSE_TIME_LIST[-1] - REQUEST_TIME_LIST[0], 3)
+    DURATION_LIST = [round((RESPONSE_TIME_LIST[i]-REQUEST_TIME_LIST[i])*1000) for i in range(len(REQUEST_TIME_LIST))]
+    request_response_total_test_time = round((RESPONSE_TIME_LIST[-1] - REQUEST_TIME_LIST[0])*1000)
 
     print(Style.RESET_ALL)
     print(Fore.LIGHTGREEN_EX + '*****************         PROGRESS REPORT        *****************')
-    print(Fore.LIGHTYELLOW_EX +  '*  All time indicators - in seconds'); print()
-    print(report_color + '[ latency/ping time            ] =', round(statistics.mean(LATENCY_LIST), 3))
+    print(Fore.LIGHTYELLOW_EX +  '*  All time indicators - in milliseconds (ms)'); print()
+    print(report_color + '[ latency/ping time            ] =', round(statistics.mean(LATENCY_LIST)*1000))
     print(report_color + '[ total test time              ] =', test_duration)
     print(report_color + '[ requests-responses test time ] =', request_response_total_test_time)
     print(report_color + '[ workplaces                   ] =', CNT_INSTANCES)
@@ -190,11 +191,11 @@ async def display_report(test_duration):
     await display_stats(report_color, QUEUE_TIME_LIST)
     
     print(); print(Fore.LIGHTGREEN_EX + 'Lists of values:')
-    print(list_title_color + '[ response time values   ] =' + list_values_color, DURATION_LIST)
+    print(list_title_color + '[ response time values ] =' + list_values_color, DURATION_LIST)
     print(list_title_color + '[ response sorted values ] =' + list_values_color, sorted(DURATION_LIST))
-    print(list_title_color + '[ process time values        ] =' + list_values_color, PROCESS_TIME_LIST)
+    print(list_title_color + '[ process time values ] =' + list_values_color, PROCESS_TIME_LIST)
     print(list_title_color + '[ process time sorted values ] =' + list_values_color, sorted(PROCESS_TIME_LIST))
-    print(list_title_color + '[ queue time values        ] =' + list_values_color, QUEUE_TIME_LIST)
+    print(list_title_color + '[ queue time values ] =' + list_values_color, QUEUE_TIME_LIST)
     print(list_title_color + '[ queue time sorted values ] =' + list_values_color, sorted(QUEUE_TIME_LIST))
     print(list_title_color + '[ requests list  ] =' + list_values_color, REQUEST_TIME_LIST)
     print(list_title_color + '[ responses list ] =' + list_values_color, RESPONSE_TIME_LIST)
@@ -204,11 +205,11 @@ async def display_report(test_duration):
 
 async def main():
     # the main entry function - runs setted number of instances and its tasks
-    print(f'Test has started. {CNT_TOTAL_REQUESTS} requests will be made. Please wait.')
+    print(Fore.LIGHTMAGENTA_EX + f'Test has started. A total of {CNT_TOTAL_REQUESTS} requests will be made. Please wait.')
     start_test_time = time.monotonic()
     await asyncio.gather( *( instance_action_v1() for i in range(CNT_INSTANCES) ) )
     finish_test_time = time.monotonic()
-    test_duration = round( (finish_test_time - start_test_time), 3)
+    test_duration = round((finish_test_time - start_test_time)*1000)
     await display_report(test_duration)
 
 
