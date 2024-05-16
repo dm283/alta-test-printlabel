@@ -1,4 +1,4 @@
-import sys, asyncio, random, time, websockets, json, logging, os, configparser
+import sys, asyncio, random, time, websockets, json, logging, os, configparser, statistics
 from colorama import just_fix_windows_console, Fore, Back, Style
 from pathlib import Path
 
@@ -10,7 +10,6 @@ if os.path.exists(config_file):
   config.read(config_file, encoding='utf-8')
 else:
   print("error! config file doesn't exist"); sys.exit()
-
 
 def get_codes():
     # gets list of code from outer source/file
@@ -28,18 +27,22 @@ def create_code_list(code_list, quantity):
         created_list.append(code)
     return created_list
 
-
-# logger = logging.getLogger('websockets')
-# logger.setLevel(logging.DEBUG)
-# logger.addHandler(logging.StreamHandler())
+COLOR_SET = {
+    1: Fore.YELLOW,
+    2: Fore.CYAN,
+    3: Fore.LIGHTGREEN_EX,
+    4: Fore.LIGHTYELLOW_EX,
+}
 
 CHECK_AUTH = config.getboolean('default', 'check_auth')
 PASS_IF_TASK_ERROR = config.getboolean('default', 'pass_if_task_error')
 INSTANCES_COLORS_ENABLED = config.getboolean('default', 'instances_colors_enabled')
 CNT_INSTANCES = int(config['default']['cnt_instances'])
-CNT_TASKS = int(config['default']['cnt_tasks'])
+if CNT_INSTANCES > len(COLOR_SET):
+    INSTANCES_COLORS_ENABLED = False
+CNT_INSTANCE_TASKS_PER_SEC = int(config['default']['cnt_instance_tasks_per_sec'])
 CNT_CYCLES = int(config['default']['cnt_cycles'])
-REQUEST_CYCLE_FREQUENCY = int(config['default']['request_cycle_frequency'])  # seconds
+REQUEST_TIME_GAP = 1 / CNT_INSTANCE_TASKS_PER_SEC
 
 TOKEN = config['default']['token']
 URI = config['default']['uri']
@@ -47,23 +50,19 @@ PROTOCOL_GUID = config['default']['protocol_guid']
 ORDER_GUID = config['default']['order_guid']
 STATISTIC = config.getboolean('default', 'statistic')
 
-COLOR_SET = {
-    1: Fore.YELLOW,
-    2: Fore.CYAN,
-    3: Fore.LIGHTGREEN_EX,
-}
 CNT_INSTANCES_STARTED = int()
-CYCLE_START_TIME = {}
+# CYCLE_START_TIME = {}
+REQUEST_TIME_LIST = list()
+RESPONSE_TIME_LIST = list()
 CNT_ERRORS = int()
 LATENCY_LIST = list()
 DURATION_LIST = list()
 PROCESS_TIME_LIST = list()
 QUEUE_TIME_LIST = list()
 
-CNT_TOTAL_REQUESTS = CNT_INSTANCES * CNT_TASKS * CNT_CYCLES
+CNT_TOTAL_REQUESTS = CNT_INSTANCES * CNT_INSTANCE_TASKS_PER_SEC * CNT_CYCLES
 CODE_LIST = get_codes()
 CODE_LIST = create_code_list(CODE_LIST, CNT_TOTAL_REQUESTS)
-print(CODE_LIST)
 
 
 async def display_instance_text(instance_id, instance_color, text_to_display):
@@ -77,17 +76,17 @@ async def receive_response(ws, instance_id, instance_color, cnt_tsks):
 
     for cycle in range(CNT_CYCLES):
         for i in range(cnt_tsks):
-            #await asyncio.sleep(2) ######################
             response = await ws.recv()
-            response_time = time.monotonic()
-            text_msg = f'[ response ]:  from {CYCLE_START_TIME[instance_id][cycle]} to {response_time}  --  {response}'
-            await display_instance_text(instance_id, instance_color, text_msg)
             if 'Error' in response:
                 CNT_ERRORS += 1
                 if PASS_IF_TASK_ERROR:
                     continue
-            duration = round((response_time - CYCLE_START_TIME[instance_id][cycle]), 3) 
-            DURATION_LIST.append(duration)
+            response_time = time.monotonic()
+            RESPONSE_TIME_LIST.append(response_time)
+
+            #text_msg = f'[ response ]:  from {CYCLE_START_TIME[instance_id][cycle]} to {response_time}  --  {response}'
+            text_msg = f'[ response ]:  {response_time}'
+            await display_instance_text(instance_id, instance_color, text_msg)
 
             json_response = json.loads(response)
             PROCESS_TIME_LIST.append(json_response['Data']['ProcessTime']/1000)
@@ -98,29 +97,19 @@ async def create_request(ws, instance_id, instance_color, cnt_tsks):
     # creates all requests for instance
     json_msg = { "Operation": "PrintLabel", "Data": {
                 "Code": '', "ProtocolGUID": PROTOCOL_GUID, "OrderGUID": ORDER_GUID, "Statistic": STATISTIC, } }
-    CYCLE_START_TIME[instance_id] = {}
-
-
     for cycle in range(CNT_CYCLES):
-
         for i in range(cnt_tsks):
-            # each iteration chooses random code from code_list
-            # code = random.choice(CODE_LIST)
             code = CODE_LIST.pop()
             json_msg['Data']['Code'] = code
             msg = json.dumps(json_msg)
-
             await ws.send(msg)
             request_time = time.monotonic()
-            text_msg = f'[ request ]:  {request_time}  {msg}'
+            REQUEST_TIME_LIST.append(request_time)
+            text_msg = f'[ request ]:  {request_time}' #  {msg}'
             await display_instance_text(instance_id, instance_color, text_msg)
-
-        turn_time = time.monotonic()
-        text_msg = f'turn {cycle+1} tasks created  {turn_time}'
+            await asyncio.sleep(REQUEST_TIME_GAP)  #  
+        text_msg = f'turn {cycle+1} tasks created'#  {turn_time}'
         await display_instance_text(instance_id, instance_color, text_msg)
-        CYCLE_START_TIME[instance_id][cycle] = turn_time
-
-        await asyncio.sleep(REQUEST_CYCLE_FREQUENCY)
 
 
 async def instance_action_v1():
@@ -139,7 +128,6 @@ async def instance_action_v1():
         pong_waiter = await ws.ping()
         latency = await pong_waiter  # only if you want to wait for the corresponding pong
         LATENCY_LIST.append(latency)
-        print('latency', latency)
 
         # # 1 Authentication
         json_auth = { "Operation": "Auth", "Data": { "Token": TOKEN, } }
@@ -154,53 +142,59 @@ async def instance_action_v1():
 
         # 2 Printlabel requests and responses
         await asyncio.gather(
-            asyncio.create_task( create_request(ws, instance_id, instance_color, CNT_TASKS) ),
-            asyncio.create_task( receive_response(ws, instance_id, instance_color, CNT_TASKS) ),
+            asyncio.create_task( create_request(ws, instance_id, instance_color, CNT_INSTANCE_TASKS_PER_SEC) ),
+            asyncio.create_task( receive_response(ws, instance_id, instance_color, CNT_INSTANCE_TASKS_PER_SEC) ),
         )
 
     await asyncio.sleep(0.5)
     await display_instance_text(instance_id, instance_color, 'all tasks is completed')
     
 
+async def display_stats(report_color, indicator_list):
+    # create and displays statistics in a report
+    print(report_color + '[ min       ] =', min(indicator_list))
+    print(report_color + '[ max       ] =', max(indicator_list))        
+    print(report_color + '[ mean      ] =', round(statistics.mean(indicator_list), 3))
+    print(report_color + '[ median    ] =', round(statistics.median(indicator_list), 3))
+    print(report_color + '[ mode      ] =', round(statistics.mode(indicator_list), 3))
+    print(report_color + '[ multimode ] =', statistics.multimode(indicator_list))
+
+
 async def display_report(test_duration):
     # creates and displays a report
+    report_color = Fore.LIGHTCYAN_EX
+    list_title_color = Fore.LIGHTBLACK_EX
+    list_values_color = Fore.WHITE
+    DURATION_LIST = [ round(RESPONSE_TIME_LIST[i] - REQUEST_TIME_LIST[i], 3)  for i in range( len(REQUEST_TIME_LIST) ) ]
+    request_response_total_test_time = round(RESPONSE_TIME_LIST[-1] - REQUEST_TIME_LIST[0], 3)
+
     print(Style.RESET_ALL)
-    report_color = Fore.LIGHTMAGENTA_EX
     print(Fore.LIGHTGREEN_EX + '*****************         PROGRESS REPORT        *****************')
-    print(report_color + '[ Latency                   ] =', 
-          round(sum(LATENCY_LIST)/len(LATENCY_LIST), 3))
-    print(report_color + '[ Total test time           ] =', test_duration)
-    print(report_color + '[ Workplaces                ] =', CNT_INSTANCES)
-    print(report_color + '[ Number of requests        ] =', CNT_TASKS, '(one workplace per second)')
-    print(report_color + '[ Number of requests        ] =', CNT_TOTAL_REQUESTS, '(total)') 
-    print(report_color + '[ Number of error responses ] =', CNT_ERRORS)
+    print(Fore.LIGHTYELLOW_EX +  '*  All time indicators - in seconds'); print()
+    print(report_color + '[ latency/ping time                ] =', round(statistics.mean(LATENCY_LIST), 3))
+    print(report_color + '[ total test time                  ] =', test_duration)
+    print(report_color + '[ request-response total test time ] =', request_response_total_test_time)
+    print(report_color + '[ workplaces                       ] =', CNT_INSTANCES)
+    print(report_color + '[ number of requests               ] =', CNT_INSTANCE_TASKS_PER_SEC, '(one workplace per second)')
+    print(report_color + '[ number of requests               ] =', CNT_TOTAL_REQUESTS, '(total)') 
+    print(report_color + '[ error responses                  ] =', CNT_ERRORS)
 
-    if DURATION_LIST:
-        print(); print(Fore.LIGHTGREEN_EX + 'Response time (including send/receive, process, queue time):')
-        print(report_color + '[ min     ] =', min(DURATION_LIST))
-        print(report_color + '[ max     ] =', max(DURATION_LIST))
-        print(report_color + '[ average ] =', 
-              round(sum(DURATION_LIST)/len(DURATION_LIST), 3))
-    print(Fore.LIGHTCYAN_EX + '[ values  ] =', DURATION_LIST)
-
-    if PROCESS_TIME_LIST:
-        print(); print(Fore.LIGHTGREEN_EX + 'Process time:')
-        print(report_color + '[ min     ] =', min(PROCESS_TIME_LIST))
-        print(report_color + '[ max     ] =', max(PROCESS_TIME_LIST))
-        print(report_color + '[ average ] =', 
-              round(sum(PROCESS_TIME_LIST)/len(PROCESS_TIME_LIST), 3))
-    print(Fore.LIGHTCYAN_EX + '[ values  ] =', PROCESS_TIME_LIST)
-
-    if QUEUE_TIME_LIST:
-        print(); print(Fore.LIGHTGREEN_EX + 'Queue time:')
-        print(report_color + '[ min     ] =', min(QUEUE_TIME_LIST))
-        print(report_color + '[ max     ] =', max(QUEUE_TIME_LIST))
-        print(report_color + '[ average ] =', 
-              round(sum(QUEUE_TIME_LIST)/len(QUEUE_TIME_LIST), 3))
-    print(Fore.LIGHTCYAN_EX + '[ values  ] =', QUEUE_TIME_LIST)
+    print(); print(Fore.LIGHTGREEN_EX + 'Response time (including send/receive, process, queue time):')
+    await display_stats(report_color, DURATION_LIST)
+    print(); print(Fore.LIGHTGREEN_EX + 'Process time:')
+    await display_stats(report_color, PROCESS_TIME_LIST)
+    print(); print(Fore.LIGHTGREEN_EX + 'Queue time:')
+    await display_stats(report_color, QUEUE_TIME_LIST)
     
-    print()
-    print(Fore.LIGHTYELLOW_EX +  '*  All time indicators - in seconds')
+    print(); print(Fore.LIGHTGREEN_EX + 'Lists of values:')
+    print(list_title_color + '[ response time values   ] =' + list_values_color, DURATION_LIST)
+    print(list_title_color + '[ response sorted values ] =' + list_values_color, sorted(DURATION_LIST))
+    print(list_title_color + '[ process time values        ] =' + list_values_color, PROCESS_TIME_LIST)
+    print(list_title_color + '[ process time sorted values ] =' + list_values_color, sorted(PROCESS_TIME_LIST))
+    print(list_title_color + '[ queue time values        ] =' + list_values_color, QUEUE_TIME_LIST)
+    print(list_title_color + '[ queue time sorted values ] =' + list_values_color, sorted(QUEUE_TIME_LIST))
+    print(list_title_color + '[ requests list  ] =' + list_values_color, REQUEST_TIME_LIST)
+    print(list_title_color + '[ responses list ] =' + list_values_color, RESPONSE_TIME_LIST)
 
     print(Style.RESET_ALL)
 
