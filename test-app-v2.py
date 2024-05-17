@@ -43,6 +43,13 @@ if CNT_INSTANCES > len(COLOR_SET):
 CNT_INSTANCE_TASKS_PER_SEC = int(config['default']['cnt_instance_tasks_per_sec'])
 CNT_CYCLES = int(config['default']['cnt_cycles'])
 REQUEST_TIME_GAP = 1 / CNT_INSTANCE_TASKS_PER_SEC
+# as there is a request-time-gap inside each cycle, cycle-gap is corrected by it
+if int(config['default']['cycle_time_gap']) >= REQUEST_TIME_GAP:
+    CYCLE_TIME_GAP = int(config['default']['cycle_time_gap']) - REQUEST_TIME_GAP
+else:
+    CYCLE_TIME_GAP = 0
+# print(REQUEST_TIME_GAP, CYCLE_TIME_GAP)
+# sys.exit()
 
 TOKEN = config['default']['token']
 URI = config['default']['uri']
@@ -129,7 +136,7 @@ async def create_request(ws, instance_id, instance_color, cnt_tsks):
 
             await asyncio.sleep(REQUEST_TIME_GAP)
         
-        # await asyncio.sleep(1.0)
+        await asyncio.sleep(CYCLE_TIME_GAP)
     
     
     # old version
