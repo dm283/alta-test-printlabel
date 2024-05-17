@@ -13,10 +13,11 @@ else:
 
 def get_codes():
     # gets list of code from outer source/file
-    # code_list = ['4680648061203', ] # '4680648061200', ]
-    with open('code-list.txt', 'r') as f:
-        code_list = f.readlines()
-        code_list = [c for c in map(lambda x: x.replace('\n', ''), code_list)]
+    # with open('code-list.txt', 'r') as f:
+    #     code_list = f.readlines()
+    #     code_list = [c for c in map(lambda x: x.replace('\n', ''), code_list)]
+    
+    code_list = ['4680648061200', ] # '4680648061200', ]  4680648025847
     return code_list
 
 def create_code_list(code_list, quantity):
@@ -67,54 +68,52 @@ LATENCY_LIST = list()
 DURATION_LIST = list()
 PROCESS_TIME_LIST = list()
 QUEUE_TIME_LIST = list()
+INSTANCE_TASKS_OVER_TIME = list()
+CODES_OVER = dict()
+INSTANCE_CODE_LISTS = dict()
+INSTANCE_CURRENT_CODE = dict()
+#CURRENT_CODE = CODE_LIST.pop()
 
 CNT_TOTAL_REQUESTS = CNT_INSTANCES * CNT_INSTANCE_TASKS_PER_SEC * CNT_CYCLES
 CODE_LIST = get_codes()
-CODE_LIST = create_code_list(CODE_LIST, CNT_TOTAL_REQUESTS)
+# CODE_LIST = create_code_list(CODE_LIST, CNT_TOTAL_REQUESTS)
 
 
 async def display_instance_text(instance_id, instance_color, text_to_display):
     # display text of particular instance
-    # print(instance_color + f'instance [#{instance_id}]:  ' + text_to_display)
-    pass
+    print(instance_color + f'instance [#{instance_id}]:  ' + text_to_display)
+    # pass
 
 
 async def receive_response(ws, instance_id, instance_color, cnt_tsks):
     # receives all responses for instance
-    global CNT_ERRORS
+    # any response (successful and error) is appended to RESPONSES_LIST
+    # as error response: (-1) is appended to RESPONSE_TIME_LIST instead response-time
+    global CNT_ERRORS, INSTANCE_CURRENT_CODE, CODES_OVER
 
     for i in range(CNT_CYCLES * cnt_tsks):
+        print('777777777 awaits new response') ##
         response = await ws.recv()
         response_time = time.monotonic()
-        if 'Error' in response:
-            CNT_ERRORS += 1; continue
-        RESPONSE_TIME_LIST.append(response_time)
         RESPONSES_LIST.append(response)
 
         # uncomment it if display messages is needed!
-        # text_msg = f'[ response ]:  {response_time}  --  {response}'
-        text_msg = f'[ response ]:  {response_time}'
+        text_msg = f'[ response ]:  {response_time}  --  {response}'
+        # text_msg = f'[ response ]:  {response_time}'
         await display_instance_text(instance_id, instance_color, text_msg)
 
-    # old version
-    # for cycle in range(CNT_CYCLES):
-    #     for i in range(cnt_tsks):
-    #         response = await ws.recv()
-    #         if 'Error' in response:
-    #             CNT_ERRORS += 1
-    #             if PASS_IF_TASK_ERROR:
-    #                 continue
-    #         response_time = time.monotonic()
-    #         RESPONSE_TIME_LIST.append(response_time)
+        if 'Error' in response:
+            CNT_ERRORS += 1
+            RESPONSE_TIME_LIST.append(-1)
+            if len(INSTANCE_CODE_LISTS[instance_id]) > 0:
+                INSTANCE_CURRENT_CODE[instance_id] = INSTANCE_CODE_LISTS[instance_id].pop()
+            else:
+                CODES_OVER[instance_id] = True
+                print('11111111111111111 RETURN') ##
+                return 0
+        else:
+            RESPONSE_TIME_LIST.append(response_time)
 
-    #         # text_msg = f'[ response ]:  {response_time}  --  {response}'
-    #         text_msg = f'[ response ]:  {response_time}'
-    #         await display_instance_text(instance_id, instance_color, text_msg)
-
-    #         json_response = json.loads(response)
-    #         PROCESS_TIME_LIST.append(json_response['Data']['ProcessTime'])
-    #         QUEUE_TIME_LIST.append(json_response['Data']['QueueTime'])
-        
 
 async def create_request(ws, instance_id, instance_color, cnt_tsks):
     # creates all requests for instance
@@ -123,18 +122,22 @@ async def create_request(ws, instance_id, instance_color, cnt_tsks):
     
     for cycle in range(CNT_CYCLES):
         for task in range(cnt_tsks):
-            json_msg['Data']['Code'] = CODE_LIST.pop()
+            # json_msg['Data']['Code'] = CODE_LIST.pop()  # option #1
+            json_msg['Data']['Code'] = INSTANCE_CURRENT_CODE[instance_id]       # option #2
             msg = json.dumps(json_msg)
             await ws.send(msg)
             request_time = time.monotonic()
             REQUEST_TIME_LIST.append(request_time)
 
             # uncomment it if display messages is needed!
-            # text_msg = f'[ request ]:  {request_time}  --  {msg}'
-            text_msg = f'[ request ]:  {request_time}'
+            text_msg = f'[ request ]:  {request_time}  --  {msg}'
+            # text_msg = f'[ request ]:  {request_time}'
             await display_instance_text(instance_id, instance_color, text_msg)
 
             await asyncio.sleep(REQUEST_TIME_GAP)
+
+            if CODES_OVER[instance_id]:
+                return 0
         
         await asyncio.sleep(CYCLE_TIME_GAP)
     
@@ -159,10 +162,13 @@ async def create_request(ws, instance_id, instance_color, cnt_tsks):
 
 async def instance_action_v1():
     # runs instance and its tasks
-    global CNT_INSTANCES_STARTED
+    global CNT_INSTANCES_STARTED, CODES_OVER, INSTANCE_CODE_LISTS, INSTANCE_CURRENT_CODE
     CNT_INSTANCES_STARTED += 1
     instance_id = CNT_INSTANCES_STARTED
     instance_color = COLOR_SET[instance_id] if INSTANCES_COLORS_ENABLED else Fore.WHITE
+    CODES_OVER[instance_id] = False
+    INSTANCE_CODE_LISTS[instance_id] = CODE_LIST.copy()
+    INSTANCE_CURRENT_CODE[instance_id] = INSTANCE_CODE_LISTS[instance_id].pop()
     
     await display_instance_text(instance_id, instance_color, 'instance is created')
     await display_instance_text(instance_id, instance_color, 'set connection...')
@@ -191,6 +197,7 @@ async def instance_action_v1():
                 asyncio.create_task( create_request(ws, instance_id, instance_color, CNT_INSTANCE_TASKS_PER_SEC) ),
                 asyncio.create_task( receive_response(ws, instance_id, instance_color, CNT_INSTANCE_TASKS_PER_SEC) ),
             )
+            INSTANCE_TASKS_OVER_TIME.append(time.monotonic())
     except Exception as ex:
         print('testing error: ', ex)
         sys.exit()
@@ -208,45 +215,60 @@ async def display_stats(report_color, indicator_list):
 
 async def display_report(test_duration):
     # creates and displays a report
+    print(RESPONSE_TIME_LIST)
+    print(RESPONSES_LIST)
+
     report_color = Fore.LIGHTCYAN_EX
     error_color = Fore.LIGHTRED_EX if CNT_ERRORS else report_color
     list_title_color = Fore.LIGHTBLACK_EX
     list_values_color = Fore.WHITE
-    DURATION_LIST = [round((RESPONSE_TIME_LIST[i]-REQUEST_TIME_LIST[i])*1000) for i in range(len(REQUEST_TIME_LIST))]
-    request_response_total_test_time = round((RESPONSE_TIME_LIST[-1] - REQUEST_TIME_LIST[0])*1000)
+    if RESPONSE_TIME_LIST:
+        for i in range(len(REQUEST_TIME_LIST)):
+            if RESPONSE_TIME_LIST[i] != -1:
+                duration = round((RESPONSE_TIME_LIST[i]-REQUEST_TIME_LIST[i])*1000)
+                DURATION_LIST.append(duration)        
+        
+        # DURATION_LIST = [round((RESPONSE_TIME_LIST[i]-REQUEST_TIME_LIST[i])*1000) for i in range(len(REQUEST_TIME_LIST))]
+        operation_time_over = max(INSTANCE_TASKS_OVER_TIME)
+        request_response_total_test_time = round((operation_time_over - REQUEST_TIME_LIST[0])*1000)
+        # request_response_total_test_time = round((RESPONSE_TIME_LIST[-1] - REQUEST_TIME_LIST[0])*1000)
 
     for response in RESPONSES_LIST:
-        json_response = json.loads(response)
-        PROCESS_TIME_LIST.append(json_response['Data']['ProcessTime'])
-        QUEUE_TIME_LIST.append(json_response['Data']['QueueTime'])
+        if 'Error' not in response:
+            json_response = json.loads(response)
+            PROCESS_TIME_LIST.append(json_response['Data']['ProcessTime'])
+            QUEUE_TIME_LIST.append(json_response['Data']['QueueTime'])
 
     print(Style.RESET_ALL)
     print(Fore.LIGHTGREEN_EX + '*****************         PROGRESS REPORT        *****************')
     print(Fore.LIGHTYELLOW_EX +  '*  All time indicators - in milliseconds (ms)'); print()
     print(report_color + '[ latency/ping time            ] =', round(statistics.mean(LATENCY_LIST)*1000))
     print(report_color + '[ total test time              ] =', test_duration)
-    print(report_color + '[ requests-responses test time ] =', request_response_total_test_time)
+    if RESPONSE_TIME_LIST:
+        print(report_color + '[ requests-responses test time ] =', request_response_total_test_time)
     print(report_color + '[ workplaces                   ] =', CNT_INSTANCES)
     print(report_color + '[ number of requests           ] =', CNT_INSTANCE_TASKS_PER_SEC, '(one workplace per second)')
-    print(report_color + '[ number of requests           ] =', CNT_TOTAL_REQUESTS, '(total)') 
+    print(report_color + '[ total number of requests     ] =', len(REQUEST_TIME_LIST), '(actually done)')
+    print(report_color + '[ successful responses         ] =', len(REQUEST_TIME_LIST) - CNT_ERRORS)
     print(error_color + '[ error responses              ] =', CNT_ERRORS)
 
-    print(); print(Fore.LIGHTGREEN_EX + 'Response time (including send/receive, process, queue time):')
-    await display_stats(report_color, DURATION_LIST)
-    print(); print(Fore.LIGHTGREEN_EX + 'Process time:')
-    await display_stats(report_color, PROCESS_TIME_LIST)
-    print(); print(Fore.LIGHTGREEN_EX + 'Queue time:')
-    await display_stats(report_color, QUEUE_TIME_LIST)
-    
-    print(); print(Fore.LIGHTGREEN_EX + 'Lists of values:')
-    print(list_title_color + '[ response time values ] =' + list_values_color, DURATION_LIST)
-    print(list_title_color + '[ response sorted values ] =' + list_values_color, sorted(DURATION_LIST))
-    print(list_title_color + '[ process time values ] =' + list_values_color, PROCESS_TIME_LIST)
-    print(list_title_color + '[ process time sorted values ] =' + list_values_color, sorted(PROCESS_TIME_LIST))
-    print(list_title_color + '[ queue time values ] =' + list_values_color, QUEUE_TIME_LIST)
-    print(list_title_color + '[ queue time sorted values ] =' + list_values_color, sorted(QUEUE_TIME_LIST))
-    print(list_title_color + '[ requests list  ] =' + list_values_color, REQUEST_TIME_LIST)
-    print(list_title_color + '[ responses list ] =' + list_values_color, RESPONSE_TIME_LIST)
+    if DURATION_LIST:
+        print(); print(Fore.LIGHTGREEN_EX + 'Response time (including send/receive, process, queue time):')
+        await display_stats(report_color, DURATION_LIST)
+        print(); print(Fore.LIGHTGREEN_EX + 'Process time:')
+        await display_stats(report_color, PROCESS_TIME_LIST)
+        print(); print(Fore.LIGHTGREEN_EX + 'Queue time:')
+        await display_stats(report_color, QUEUE_TIME_LIST)
+        
+        print(); print(Fore.LIGHTGREEN_EX + 'Lists of values:')
+        print(list_title_color + '[ response time values ] =' + list_values_color, DURATION_LIST)
+        print(list_title_color + '[ response sorted values ] =' + list_values_color, sorted(DURATION_LIST))
+        print(list_title_color + '[ process time values ] =' + list_values_color, PROCESS_TIME_LIST)
+        print(list_title_color + '[ process time sorted values ] =' + list_values_color, sorted(PROCESS_TIME_LIST))
+        print(list_title_color + '[ queue time values ] =' + list_values_color, QUEUE_TIME_LIST)
+        print(list_title_color + '[ queue time sorted values ] =' + list_values_color, sorted(QUEUE_TIME_LIST))
+        print(list_title_color + '[ requests list  ] =' + list_values_color, REQUEST_TIME_LIST)
+        print(list_title_color + '[ responses list ] =' + list_values_color, RESPONSE_TIME_LIST)
 
     print(Style.RESET_ALL)
 
