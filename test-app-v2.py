@@ -13,11 +13,11 @@ else:
 
 def get_codes():
     # gets list of code from outer source/file
-    # with open('code-list.txt', 'r') as f:
-    #     code_list = f.readlines()
-    #     code_list = [c for c in map(lambda x: x.replace('\n', ''), code_list)]
+    with open('code-list.txt', 'r') as f:
+        code_list = f.readlines()
+        code_list = [c for c in map(lambda x: x.replace('\n', ''), code_list)]
     
-    code_list = ['4680648025847', ] # '4680648061200', ]  4680648025847
+    # code_list = ['4680648025847', '4680648061200', ] # '4680648061200', ]  4680648025847
     return code_list
 
 def create_code_list(code_list, quantity):
@@ -73,6 +73,7 @@ CODES_OVER = dict()
 INSTANCE_CODE_LISTS = dict()
 INSTANCE_CURRENT_CODE = dict()
 #CURRENT_CODE = CODE_LIST.pop()
+EXCEPTIONS_LIST = list()
 
 CNT_TOTAL_REQUESTS = CNT_INSTANCES * CNT_INSTANCE_TASKS_PER_SEC * CNT_CYCLES
 CODE_LIST = get_codes()
@@ -147,7 +148,7 @@ async def create_request(ws, instance_id, instance_color, cnt_tsks):
 
 async def instance_action_v1():
     # runs instance and its tasks
-    global CNT_INSTANCES_STARTED, CODES_OVER, INSTANCE_CODE_LISTS, INSTANCE_CURRENT_CODE
+    global CNT_INSTANCES_STARTED, CODES_OVER, INSTANCE_CODE_LISTS, INSTANCE_CURRENT_CODE, EXCEPTIONS_LIST
     CNT_INSTANCES_STARTED += 1
     instance_id = CNT_INSTANCES_STARTED
     instance_color = COLOR_SET[instance_id] if INSTANCES_COLORS_ENABLED else Fore.WHITE
@@ -190,7 +191,10 @@ async def instance_action_v1():
             INSTANCE_TASKS_OVER_TIME.append(time.monotonic())
     except Exception as ex:
         print('testing error: ', ex)
-        sys.exit()
+        INSTANCE_TASKS_OVER_TIME.append(time.monotonic())
+        EXCEPTIONS_LIST.append(ex)
+        return instance_id, ex
+        # sys.exit()
     
 
 async def display_stats(report_color, indicator_list):
@@ -207,11 +211,16 @@ async def display_report(test_duration):
     # creates and displays a report
     report_color = Fore.LIGHTCYAN_EX
     error_color = Fore.LIGHTRED_EX if CNT_ERRORS else report_color
+    responses_cnt_color = Fore.LIGHTRED_EX if len(RESPONSE_TIME_LIST) < len(REQUEST_TIME_LIST) else report_color
     list_title_color = Fore.LIGHTBLACK_EX
     list_values_color = Fore.WHITE
+
+    print('REQUEST_TIME_LIST =', REQUEST_TIME_LIST)
+    print('RESPONSE_TIME_LIST =', RESPONSE_TIME_LIST)
+
     if RESPONSE_TIME_LIST:
         for i in range(len(REQUEST_TIME_LIST)):
-            if RESPONSE_TIME_LIST[i] != -1:
+            if i < len(RESPONSE_TIME_LIST) and RESPONSE_TIME_LIST[i] != -1:
                 duration = round((RESPONSE_TIME_LIST[i]-REQUEST_TIME_LIST[i])*1000)
                 DURATION_LIST.append(duration)        
         operation_time_over = max(INSTANCE_TASKS_OVER_TIME)
@@ -226,15 +235,20 @@ async def display_report(test_duration):
     print(Style.RESET_ALL)
     print(Fore.LIGHTGREEN_EX + '*****************         PROGRESS REPORT        *****************')
     print(Fore.LIGHTYELLOW_EX +  '*  All time indicators - in milliseconds (ms)'); print()
+
+    if EXCEPTIONS_LIST:
+        print(Fore.LIGHTRED_EX + f'{len(EXCEPTIONS_LIST)} workplaces stoped the work due to exception!\n')
+
     print(report_color + '[ latency/ping time            ] =', round(statistics.mean(LATENCY_LIST)*1000))
     print(report_color + '[ total test time              ] =', test_duration)
     if RESPONSE_TIME_LIST:
         print(report_color + '[ requests-responses test time ] =', request_response_total_test_time)
     print(report_color + '[ workplaces                   ] =', CNT_INSTANCES)
     print(report_color + '[ number of requests           ] =', CNT_INSTANCE_TASKS_PER_SEC, '(one workplace per second)')
-    print(report_color + '[ total number of requests     ] =', len(REQUEST_TIME_LIST), '(actually done)')
-    print(report_color + '[ successful responses         ] =', len(REQUEST_TIME_LIST) - CNT_ERRORS)
-    print(error_color + '[ error responses              ] =', CNT_ERRORS)
+    print(report_color + '[ total number of requests     ] =', len(REQUEST_TIME_LIST), '(actually sent)')
+    print(responses_cnt_color + '[ total number of responses    ] =', len(RESPONSE_TIME_LIST), '(actually received)')
+    print(report_color + '[ successful responses         ] =', len(RESPONSE_TIME_LIST) - CNT_ERRORS)
+    print(error_color + '[ error responses              ] =', CNT_ERRORS, '(including "NotEnoughCodes")')
 
     if DURATION_LIST:
         print(); print(Fore.LIGHTGREEN_EX + 'Response time (including send/receive, process, queue time):')
