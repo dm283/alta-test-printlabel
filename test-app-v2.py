@@ -215,8 +215,8 @@ async def display_report(test_duration):
     list_title_color = Fore.LIGHTBLACK_EX
     list_values_color = Fore.WHITE
 
-    print('REQUEST_TIME_LIST =', REQUEST_TIME_LIST)
-    print('RESPONSE_TIME_LIST =', RESPONSE_TIME_LIST)
+    # print('REQUEST_TIME_LIST =', REQUEST_TIME_LIST)
+    # print('RESPONSE_TIME_LIST =', RESPONSE_TIME_LIST)
 
     if RESPONSE_TIME_LIST:
         for i in range(len(REQUEST_TIME_LIST)):
