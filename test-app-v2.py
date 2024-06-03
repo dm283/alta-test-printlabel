@@ -60,6 +60,8 @@ STATISTIC = config.getboolean('default', 'statistic')
 
 CNT_INSTANCES_STARTED = int()
 # CYCLE_START_TIME = {}
+CNT_REQUEST = int()
+CNT_RESPONSE = int()
 REQUEST_TIME_LIST = list()
 RESPONSE_TIME_LIST = list()
 RESPONSES_LIST = list()
@@ -71,6 +73,7 @@ PROCESS_TIME_LIST = list()
 QUEUE_TIME_LIST = list()
 INSTANCE_TASKS_OVER_TIME = list()
 CODES_OVER = dict()
+CODES_OVER_FLAG_IN_REQUEST_FOO = dict()
 INSTANCE_CODE_LISTS = dict()
 INSTANCE_CURRENT_CODE = dict()
 #CURRENT_CODE = CODE_LIST.pop()
@@ -91,12 +94,13 @@ async def receive_response(ws, instance_id, instance_color, cnt_tsks):
     # receives all responses for instance
     # any response (successful and error) is appended to RESPONSES_LIST
     # as error response: (-1) is appended to RESPONSE_TIME_LIST instead response-time
-    global CNT_ERRORS, INSTANCE_CURRENT_CODE, CODES_OVER
+    global CNT_ERRORS, INSTANCE_CURRENT_CODE, CODES_OVER, CODES_OVER_FLAG_IN_REQUEST_FOO, CNT_RESPONSE
 
     for i in range(CNT_CYCLES * cnt_tsks):
         response = await ws.recv()
         response_time = time.monotonic()
         RESPONSES_LIST.append(response)
+        CNT_RESPONSE += 1
 
         # uncomment it if display messages is needed!
         # text_msg = f'[ response ]:  {response_time}  --  {response}'
@@ -105,7 +109,7 @@ async def receive_response(ws, instance_id, instance_color, cnt_tsks):
 
         if 'Error' in response:
             # text_msg = f'[ response ]:  {response_time}  --  error'
-            text_msg = f'[ response ]:  {response_time}  --  error  --  {response}'
+            text_msg = f'[ response {CNT_RESPONSE}]:  {response_time}  --  error  --  {response}'
             await display_instance_text(instance_id, instance_color, text_msg)
             ERRORS_LIST.append( (response_time, response) )
             CNT_ERRORS += 1
@@ -114,15 +118,17 @@ async def receive_response(ws, instance_id, instance_color, cnt_tsks):
                 INSTANCE_CURRENT_CODE[instance_id] = INSTANCE_CODE_LISTS[instance_id].pop()
             else:
                 CODES_OVER[instance_id] = True
-                return 0
+                if CODES_OVER_FLAG_IN_REQUEST_FOO[instance_id]:
+                    return 0
         else:
-            text_msg = f'[ response ]:  {response_time}  --  ok'
+            text_msg = f'[ response {CNT_RESPONSE}]:  {response_time}  --  ok'
             await display_instance_text(instance_id, instance_color, text_msg)
             RESPONSE_TIME_LIST.append(response_time)
 
 
 async def create_request(ws, instance_id, instance_color, cnt_tsks):
     # creates all requests for instance
+    global CNT_REQUEST
     json_msg = { "Operation": "PrintLabel", "Data": {
                 "Code": '', "ProtocolGUID": PROTOCOL_GUID, "OrderGUID": ORDER_GUID, "Statistic": STATISTIC, } }
     
@@ -132,18 +138,20 @@ async def create_request(ws, instance_id, instance_color, cnt_tsks):
             json_msg['Data']['Code'] = INSTANCE_CURRENT_CODE[instance_id]       # option #2
             msg = json.dumps(json_msg)
             await ws.send(msg)
+            CNT_REQUEST += 1
             request_time = time.monotonic()
             REQUEST_TIME_LIST.append(request_time)
 
             # uncomment it if display messages is needed!
             #text_msg = f'[ request ]:  {request_time}  --  {msg}'
             # text_msg = f'[ request ]:  {request_time}'
-            text_msg = f'[ request ]:  {request_time}  --  {INSTANCE_CURRENT_CODE[instance_id]}'
+            text_msg = f'[ request {CNT_REQUEST}]:  {request_time}  --  {INSTANCE_CURRENT_CODE[instance_id]}'
             await display_instance_text(instance_id, instance_color, text_msg)
 
             await asyncio.sleep(REQUEST_TIME_GAP)
 
             if CODES_OVER[instance_id]:
+                CODES_OVER_FLAG_IN_REQUEST_FOO[instance_id] = True
                 return 0
         
         await asyncio.sleep(CYCLE_TIME_GAP)
@@ -151,11 +159,13 @@ async def create_request(ws, instance_id, instance_color, cnt_tsks):
 
 async def instance_action_v1():
     # runs instance and its tasks
-    global CNT_INSTANCES_STARTED, CODES_OVER, INSTANCE_CODE_LISTS, INSTANCE_CURRENT_CODE, EXCEPTIONS_LIST
+    global CNT_INSTANCES_STARTED, CODES_OVER, CODES_OVER_FLAG_IN_REQUEST_FOO, INSTANCE_CODE_LISTS, INSTANCE_CURRENT_CODE, EXCEPTIONS_LIST
     CNT_INSTANCES_STARTED += 1
     instance_id = CNT_INSTANCES_STARTED
     instance_color = COLOR_SET[instance_id] if INSTANCES_COLORS_ENABLED else Fore.WHITE
     CODES_OVER[instance_id] = False
+    CODES_OVER_FLAG_IN_REQUEST_FOO[instance_id] = False
+
     INSTANCE_CODE_LISTS[instance_id] = CODE_LIST.copy()
     INSTANCE_CURRENT_CODE[instance_id] = INSTANCE_CODE_LISTS[instance_id].pop()
     
