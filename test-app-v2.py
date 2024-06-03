@@ -63,6 +63,7 @@ CNT_INSTANCES_STARTED = int()
 REQUEST_TIME_LIST = list()
 RESPONSE_TIME_LIST = list()
 RESPONSES_LIST = list()
+ERRORS_LIST = list()
 CNT_ERRORS = int()
 LATENCY_LIST = list()
 DURATION_LIST = list()
@@ -103,8 +104,10 @@ async def receive_response(ws, instance_id, instance_color, cnt_tsks):
         # await display_instance_text(instance_id, instance_color, text_msg)
 
         if 'Error' in response:
-            text_msg = f'[ response ]:  {response_time}  --  error'
+            # text_msg = f'[ response ]:  {response_time}  --  error'
+            text_msg = f'[ response ]:  {response_time}  --  error  --  {response}'
             await display_instance_text(instance_id, instance_color, text_msg)
+            ERRORS_LIST.append( (response_time, response) )
             CNT_ERRORS += 1
             RESPONSE_TIME_LIST.append(-1)
             if len(INSTANCE_CODE_LISTS[instance_id]) > 0:
@@ -269,6 +272,14 @@ async def display_report(test_duration):
         # print(list_title_color + '[ responses list ] =' + list_values_color, RESPONSE_TIME_LIST)
 
     print(Style.RESET_ALL)
+
+    errors = str()
+    for e in ERRORS_LIST:
+        s = f'{e[0]}  --  {e[1]}'
+        errors += f'{s}\n'
+
+    with open('test-errors-responses.txt', 'w') as f:
+        f.write(errors)
 
 
 async def main():

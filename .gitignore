@@ -3,4 +3,5 @@ deprecated/
 config.ini
 code-list.txt
 code-list-full.txt
-
+code-list-test.txt
+errors.txt
