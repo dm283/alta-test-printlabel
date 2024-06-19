@@ -44,13 +44,20 @@ if CNT_INSTANCES > len(COLOR_SET):
 CNT_INSTANCE_TASKS_PER_SEC = int(config['default']['cnt_instance_tasks_per_sec'])
 CNT_CYCLES = int(config['default']['cnt_cycles'])
 REQUEST_TIME_GAP = 1 / CNT_INSTANCE_TASKS_PER_SEC
-# as there is a request-time-gap inside each cycle, cycle-gap is corrected by it
-if int(config['default']['cycle_time_gap']) >= REQUEST_TIME_GAP:
-    CYCLE_TIME_GAP = int(config['default']['cycle_time_gap']) - REQUEST_TIME_GAP
-else:
-    CYCLE_TIME_GAP = 0
+
+REQUESTS_OPTION = config['default']['requests_option'] #'parallel'/'consequent'
+
+if REQUESTS_OPTION == 'consequent':
+    CYCLE_TIME_GAP = CNT_INSTANCES - 1  # for 1 request per second for all workplaces only!
+if REQUESTS_OPTION == 'parallel':
+    # as there is a request-time-gap inside each cycle, cycle-gap is corrected by it
+    if int(config['default']['cycle_time_gap']) >= REQUEST_TIME_GAP:
+        CYCLE_TIME_GAP = int(config['default']['cycle_time_gap']) - REQUEST_TIME_GAP
+    else:
+        CYCLE_TIME_GAP = 0
 # print(REQUEST_TIME_GAP, CYCLE_TIME_GAP)
 # sys.exit()
+print(REQUESTS_OPTION, CYCLE_TIME_GAP)
 
 TOKEN = config['default']['token']
 URI = config['default']['uri']
@@ -76,6 +83,7 @@ INSTANCE_CURRENT_CODE = dict()
 #CURRENT_CODE = CODE_LIST.pop()
 EXCEPTIONS_LIST = list()
 NEXT_CODE_FLAG = dict()
+CNT_INSTANCES_READY_FOR_REQUESTS = int()
 
 CNT_TOTAL_REQUESTS = CNT_INSTANCES * CNT_INSTANCE_TASKS_PER_SEC * CNT_CYCLES
 CODE_LIST = get_codes()
@@ -162,6 +170,8 @@ async def create_request(ws, instance_id, instance_color, cnt_tsks):
 async def instance_action_v1():
     # runs instance and its tasks
     global CNT_INSTANCES_STARTED, CODES_OVER, INSTANCE_CODE_LISTS, INSTANCE_CURRENT_CODE, EXCEPTIONS_LIST, NEXT_CODE_FLAG
+    global CNT_INSTANCES_READY_FOR_REQUESTS
+
     CNT_INSTANCES_STARTED += 1
     instance_id = CNT_INSTANCES_STARTED
     instance_color = COLOR_SET[instance_id] if INSTANCES_COLORS_ENABLED else Fore.WHITE
@@ -170,9 +180,13 @@ async def instance_action_v1():
     INSTANCE_CURRENT_CODE[instance_id] = INSTANCE_CODE_LISTS[instance_id].pop()
     NEXT_CODE_FLAG[instance_id] = False
     
-    # instances are created after a certain period of time
-    instances_creation_time_gap = random.randint(0, 2000) / 1000
-    await asyncio.sleep(instances_creation_time_gap)
+    # instances are created after a certain period of time if REQUESTS_OPTION == 'parallel'
+    # if REQUESTS_OPTION == 'consequent', instances are created simultaneously
+    if REQUESTS_OPTION == 'parallel':
+        instances_creation_time_gap = random.randint(0, 2000) / 1000
+        await asyncio.sleep(instances_creation_time_gap)
+    if REQUESTS_OPTION == 'consequent':
+        instances_creation_time_gap = 0
 
     await display_instance_text(
         instance_id, instance_color, f'instance is created -- {time.monotonic()} -- {instances_creation_time_gap}')
@@ -197,7 +211,18 @@ async def instance_action_v1():
                 print('ERROR:  the user is not authorised!')
                 sys.exit()
 
+            CNT_INSTANCES_READY_FOR_REQUESTS += 1
+            #msg = f'{str(time.monotonic())} - instance {instance_id} ready for requests' + f'{CNT_INSTANCES_READY_FOR_REQUESTS}'
+            #await display_instance_text(instance_id, instance_color, msg) ######
+            
             # 2 Printlabel requests and responses
+            if REQUESTS_OPTION == 'consequent':
+                # await untill all workplaces will be ready for making requests
+                while CNT_INSTANCES_READY_FOR_REQUESTS < CNT_INSTANCES:
+                    await asyncio.sleep(0.001)
+                # if we need 1 request per second from all workplaces we set 1
+                await asyncio.sleep(1 * instance_id - 1)
+
             await asyncio.gather(
                 asyncio.create_task( create_request(ws, instance_id, instance_color, CNT_INSTANCE_TASKS_PER_SEC) ),
                 asyncio.create_task( receive_response(ws, instance_id, instance_color, CNT_INSTANCE_TASKS_PER_SEC) ),
