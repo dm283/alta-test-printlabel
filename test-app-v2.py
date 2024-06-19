@@ -75,6 +75,7 @@ INSTANCE_CODE_LISTS = dict()
 INSTANCE_CURRENT_CODE = dict()
 #CURRENT_CODE = CODE_LIST.pop()
 EXCEPTIONS_LIST = list()
+NEXT_CODE_FLAG = dict()
 
 CNT_TOTAL_REQUESTS = CNT_INSTANCES * CNT_INSTANCE_TASKS_PER_SEC * CNT_CYCLES
 CODE_LIST = get_codes()
@@ -91,7 +92,7 @@ async def receive_response(ws, instance_id, instance_color, cnt_tsks):
     # receives all responses for instance
     # any response (successful and error) is appended to RESPONSES_LIST
     # as error response: (-1) is appended to RESPONSE_TIME_LIST instead response-time
-    global CNT_ERRORS, INSTANCE_CURRENT_CODE, CODES_OVER
+    global CNT_ERRORS, INSTANCE_CURRENT_CODE, CODES_OVER, NEXT_CODE_FLAG
 
     for i in range(CNT_CYCLES * cnt_tsks):
         response = await ws.recv()
@@ -111,7 +112,8 @@ async def receive_response(ws, instance_id, instance_color, cnt_tsks):
             CNT_ERRORS += 1
             RESPONSE_TIME_LIST.append(-1)
             if len(INSTANCE_CODE_LISTS[instance_id]) > 0:
-                INSTANCE_CURRENT_CODE[instance_id] = INSTANCE_CODE_LISTS[instance_id].pop()
+                NEXT_CODE_FLAG[instance_id] = True
+                # INSTANCE_CURRENT_CODE[instance_id] = INSTANCE_CODE_LISTS[instance_id].pop()
             else:
                 CODES_OVER[instance_id] = True
                 return 0
@@ -128,6 +130,14 @@ async def create_request(ws, instance_id, instance_color, cnt_tsks):
     
     for cycle in range(CNT_CYCLES):
         for task in range(cnt_tsks):
+            
+            if CODES_OVER[instance_id]:
+                return 0
+    
+            if NEXT_CODE_FLAG[instance_id]:
+                INSTANCE_CURRENT_CODE[instance_id] = INSTANCE_CODE_LISTS[instance_id].pop()
+                NEXT_CODE_FLAG[instance_id] = False
+            
             # json_msg['Data']['Code'] = CODE_LIST.pop()  # option #1
             json_msg['Data']['Code'] = INSTANCE_CURRENT_CODE[instance_id]       # option #2
             msg = json.dumps(json_msg)
@@ -143,21 +153,22 @@ async def create_request(ws, instance_id, instance_color, cnt_tsks):
 
             await asyncio.sleep(REQUEST_TIME_GAP)
 
-            if CODES_OVER[instance_id]:
-                return 0
+            # if CODES_OVER[instance_id]:
+            #     return 0
         
         await asyncio.sleep(CYCLE_TIME_GAP)
 
 
 async def instance_action_v1():
     # runs instance and its tasks
-    global CNT_INSTANCES_STARTED, CODES_OVER, INSTANCE_CODE_LISTS, INSTANCE_CURRENT_CODE, EXCEPTIONS_LIST
+    global CNT_INSTANCES_STARTED, CODES_OVER, INSTANCE_CODE_LISTS, INSTANCE_CURRENT_CODE, EXCEPTIONS_LIST, NEXT_CODE_FLAG
     CNT_INSTANCES_STARTED += 1
     instance_id = CNT_INSTANCES_STARTED
     instance_color = COLOR_SET[instance_id] if INSTANCES_COLORS_ENABLED else Fore.WHITE
     CODES_OVER[instance_id] = False
     INSTANCE_CODE_LISTS[instance_id] = CODE_LIST.copy()
     INSTANCE_CURRENT_CODE[instance_id] = INSTANCE_CODE_LISTS[instance_id].pop()
+    NEXT_CODE_FLAG[instance_id] = False
     
     # instances are created after a certain period of time
     instances_creation_time_gap = random.randint(0, 2000) / 1000
